@@ -3,6 +3,8 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChatBox } from '@/components/ChatBox'
+import { AgentesPanel } from '@/components/AgentesPanel'
 
 export default function MentePage() {
   const router = useRouter()
@@ -67,23 +69,17 @@ export default function MentePage() {
 
       {/* Main */}
       <main className=\"flex-1 max-w-7xl mx-auto w-full px-4 py-8 space-y-8\">
+        {/* Chat Section */}
         <div className=\"grid grid-cols-3 gap-8\">
           {/* Chat Column */}
           <div className=\"col-span-2 space-y-4\">
             <h2 className=\"text-xl font-semibold\">💬 Chat com Nirmata</h2>
-            <div className=\"bg-slate-100 dark:bg-slate-800 rounded-lg p-6 h-96 flex items-center justify-center text-slate-500\">
-              Chat box virá aqui
-            </div>
+            <ChatBox />
           </div>
 
           {/* Agents Panel */}
           <div className=\"space-y-4\">
-            <h2 className=\"text-xl font-semibold\">🤖 Agentes</h2>
-            <div className=\"bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-2 max-h-96 overflow-y-auto\">
-              <p className=\"text-sm text-slate-600 dark:text-slate-400\">
-                Agentes prontos pra ajudar
-              </p>
-            </div>
+            <AgentesPanel />
           </div>
         </div>
 
