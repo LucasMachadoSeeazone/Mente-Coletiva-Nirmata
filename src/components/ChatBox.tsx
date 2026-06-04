@@ -30,6 +30,8 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
     if (!input.trim()) return
 
     const userMessage: Message = { role: 'user', content: input }
+    // histórico = conversa até agora (antes de adicionar a pergunta nova)
+    const historico = messages
     setMessages((prev) => [...prev, userMessage])
     setInput('')
     setLoading(true)
@@ -38,7 +40,7 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
       const response = await fetch('/api/conversa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pergunta: input }),
+        body: JSON.stringify({ pergunta: input, historico }),
       })
 
       const data = await response.json()
@@ -71,7 +73,7 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
           messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className="max-w-[85%] px-3 py-2 rounded-lg text-sm"
+                className="max-w-[85%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap"
                 style={
                   msg.role === 'user'
                     ? { background: 'rgba(59,130,246,0.9)', color: '#fff' }
