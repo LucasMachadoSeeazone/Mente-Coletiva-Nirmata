@@ -7,6 +7,7 @@ export type AgenteViz = {
   nome: string
   descricao: string
   perspectiva: string
+  prompt?: string
 }
 
 type Neuron = {
@@ -38,6 +39,14 @@ const CORES: Record<string, string[]> = {
 }
 const COR_PADRAO = '203,213,225'
 
+// Nº de neurônios pelo TAMANHO DO PROMPT (mín 5, máx 28).
+// Sem prompt, cai pro nome+descrição só pra não ficar vazio.
+function neuroniosDoAgente(a: AgenteViz): number {
+  const base = a.prompt && a.prompt.length > 0 ? a.prompt.length : (a.nome + a.descricao).length
+  const n = Math.round(4 + base / 45)
+  return Math.max(5, Math.min(28, n))
+}
+
 export function CerebroNeural({
   agentes,
   onAgenteClick,
@@ -50,8 +59,9 @@ export function CerebroNeural({
   const cbRef = useRef(onAgenteClick)
   cbRef.current = onAgenteClick
 
+  // Inclui o tamanho do prompt na chave: muda o prompt -> rebuild
   const chave = agentes
-    .map((a) => `${a.id}:${a.perspectiva}:${(a.nome + a.descricao).length}`)
+    .map((a) => `${a.id}:${a.perspectiva}:${(a.prompt ?? a.nome + a.descricao).length}`)
     .join('|')
 
   useEffect(() => {
@@ -92,10 +102,8 @@ export function CerebroNeural({
 
     const N = Math.max(1, agentes.length)
     const margin = 0.1
-    // Bolhas maiores com poucos agentes; encolhem conforme aumentam
     const vis = clamp(1.7 - N * 0.045, 0.6, 1.7)
 
-    // Posicionamento orgânico (aleatório, mas evitando sobreposição forte)
     const minDist = clamp(0.62 / Math.sqrt(N), 0.08, 0.34)
     const colocados: { x: number; y: number }[] = []
     const colocar = () => {
@@ -124,14 +132,13 @@ export function CerebroNeural({
     const clusters: Cluster[] = agentes.map((a, i) => {
       const tons = CORES[a.perspectiva] ?? [COR_PADRAO]
       const col = tons[i % tons.length]
-      const textoLen = (a.nome + a.descricao).length
-      const n = clamp(Math.round(textoLen / 3), 6, 20)
+      const n = neuroniosDoAgente(a)
       const pos = colocar()
       return {
         x: pos.x,
         y: pos.y,
         n,
-        r: (0.05 + (n / 20) * 0.045) * vis,
+        r: (0.05 + (n / 28) * 0.05) * vis,
         col,
       }
     })
