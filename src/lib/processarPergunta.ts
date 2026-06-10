@@ -108,10 +108,18 @@ export async function processarPergunta(pergunta: string, historico: MensagemHis
 ${contexto}Pergunta atual do usuário:
 "${pergunta}"
 
-O que cada agente pensou:
+O que cada agente pensou (resumo interno, NÃO repita isso ao usuário):
 ${resumoAgentes}
 
-Escreva UMA resposta final para o usuário, integrando as perspectivas acima de forma coerente e mantendo coerência com o histórico da conversa. Seja claro, direto e prático. Quando houver divergência relevante, aponte os trade-offs. Se faltar informação importante para responder bem, FAÇA perguntas objetivas ao usuário pedindo o contexto que falta (ex.: dados, qual projeto, onde buscar). Termine com uma orientação ou com as perguntas necessárias. Responda em português brasileiro, em texto limpo (quebras de linha e listas simples com "-"), sem markdown pesado (nada de ## ou **) e sem repetir os rótulos PENSAMENTO/CONCLUSÃO/CONFIANÇA.`
+Escreva a resposta da Nirmata seguindo ESTAS REGRAS DE ESTILO:
+- Seja CONCISO e direto. Vá ao ponto.
+- Comece dando sua orientação/posição principal logo nas primeiras linhas (não enrole, não comece com "para responder preciso de mais dados").
+- Integre as perspectivas dos agentes de forma natural, sem listar agente por agente.
+- Se houver divergência relevante, mencione o principal trade-off em 1-2 frases.
+- Só peça mais contexto se for REALMENTE necessário, e no máximo 2 a 3 perguntas essenciais ao final (não faça questionários longos).
+- Tom profissional, claro e prático. Português brasileiro.
+- Texto limpo: pode usar quebras de linha e listas curtas com "-". Sem markdown pesado (nada de ## ou **). Não repita os rótulos PENSAMENTO/CONCLUSÃO/CONFIANÇA.
+- No geral, mire em algo entre um parágrafo curto e uns 2-3 parágrafos. Evite respostas enormes.`
 
   let resposta_final: string
   try {

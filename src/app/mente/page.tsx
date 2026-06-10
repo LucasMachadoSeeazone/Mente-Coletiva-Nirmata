@@ -26,6 +26,14 @@ type Agente = {
   prompt?: string
 }
 
+type Documento = {
+  id: string
+  nome_arquivo: string
+  tipo: string | null
+  tamanho_bytes: number | null
+  status: string | null
+}
+
 const PERSPECTIVAS = ['Análise', 'Estratégia', 'Risco', 'Pessoas']
 
 const FALLBACK: Agente[] = AGENTES_CONFIG.filter((a) => a.ativo).map((a) => ({ ...a }))
@@ -37,6 +45,13 @@ const painelStyle: React.CSSProperties = {
   WebkitBackdropFilter: 'blur(10px)',
 }
 
+function formatarTamanho(bytes: number | null): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 export default function MentePage() {
   const [, setAgentesRespostas] = useState<AgentResponse[]>([])
   const [agentes, setAgentes] = useState<Agente[]>(FALLBACK)
@@ -45,6 +60,9 @@ export default function MentePage() {
   const [salvando, setSalvando] = useState(false)
   const [form, setForm] = useState({ nome: '', descricao: '', perspectiva: 'Análise', prompt: '' })
 
+  const [documentos, setDocumentos] = useState<Documento[]>([])
+  const [enviandoDoc, setEnviandoDoc] = useState(false)
+
   const carregarAgentes = () => {
     fetch('/api/agentes')
       .then((r) => r.json())
@@ -52,6 +70,13 @@ export default function MentePage() {
         if (d.agentes) setAgentes(d.agentes)
       })
       .catch(() => {})
+  }
+
+  const carregarDocumentos = (agenteId: number) => {
+    fetch('/api/agente-documentos?agente_id=' + agenteId)
+      .then((r) => r.json())
+      .then((d) => setDocumentos(d.documentos ?? []))
+      .catch(() => setDocumentos([]))
   }
 
   useEffect(() => {
@@ -66,8 +91,13 @@ export default function MentePage() {
         perspectiva: agenteSel.perspectiva,
         prompt: agenteSel.prompt ?? '',
       })
+      if (!modoNovo && agenteSel.id > 0) {
+        carregarDocumentos(agenteSel.id)
+      } else {
+        setDocumentos([])
+      }
     }
-  }, [agenteSel])
+  }, [agenteSel, modoNovo])
 
   const handleNovaResposta = (a: AgentResponse[]) => setAgentesRespostas(a)
 
@@ -83,6 +113,7 @@ export default function MentePage() {
   const fechar = () => {
     setAgenteSel(null)
     setModoNovo(false)
+    setDocumentos([])
   }
 
   const salvar = async () => {
@@ -126,6 +157,37 @@ export default function MentePage() {
       alert('Erro ao remover. Tenta de novo.')
     } finally {
       setSalvando(false)
+    }
+  }
+
+  const enviarDocumento = async (file: File) => {
+    if (!agenteSel || agenteSel.id <= 0) return
+    setEnviandoDoc(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('agente_id', String(agenteSel.id))
+      const r = await fetch('/api/agente-documentos', { method: 'POST', body: fd })
+      const d = await r.json()
+      if (d.erro) {
+        alert('Erro ao enviar: ' + d.erro)
+      } else {
+        carregarDocumentos(agenteSel.id)
+      }
+    } catch {
+      alert('Erro ao enviar o documento.')
+    } finally {
+      setEnviandoDoc(false)
+    }
+  }
+
+  const removerDocumento = async (id: string) => {
+    if (!confirm('Remover este documento?')) return
+    try {
+      await fetch('/api/agente-documentos?id=' + id, { method: 'DELETE' })
+      if (agenteSel) carregarDocumentos(agenteSel.id)
+    } catch {
+      alert('Erro ao remover o documento.')
     }
   }
 
@@ -301,6 +363,67 @@ export default function MentePage() {
                 </option>
               ))}
             </select>
+
+            {/* Documentos do agente */}
+            <div className="mb-6">
+              <label className="block text-xs text-slate-400 mb-2">
+                Documentos <span className="text-slate-600">(PDF, Word, imagens)</span>
+              </label>
+
+              {modoNovo || !agenteSel || agenteSel.id <= 0 ? (
+                <p className="text-xs text-slate-600">Salve o agente primeiro pra poder anexar documentos.</p>
+              ) : (
+                <>
+                  <label
+                    className="flex items-center justify-center gap-2 w-full py-2 mb-3 rounded-lg text-sm cursor-pointer"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.2)', color: '#cbd5e1' }}
+                  >
+                    {enviandoDoc ? 'Enviando...' : '+ Anexar documento'}
+                    <input
+                      type="file"
+                      hidden
+                      disabled={enviandoDoc}
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) enviarDocumento(f)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+
+                  {documentos.length === 0 ? (
+                    <p className="text-xs text-slate-600">Nenhum documento anexado ainda.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {documentos.map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs"
+                          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-slate-200">{doc.nome_arquivo}</p>
+                            <p className="text-slate-500">
+                              {formatarTamanho(doc.tamanho_bytes)}
+                              {doc.status === 'pendente' ? ' · texto ainda não extraído' : ' · ' + doc.status}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removerDocumento(doc.id)}
+                            className="text-slate-500 hover:text-red-400 flex-shrink-0"
+                            style={{ cursor: 'pointer', fontSize: 16 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             <div className="flex gap-2">
               <button
