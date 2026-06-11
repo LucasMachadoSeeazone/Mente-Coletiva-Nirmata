@@ -4,6 +4,22 @@ import { supabaseServer } from "@/lib/supabase/server"
 const BUCKET = "agente-documentos"
 
 export async function GET(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get("id")
+  const querConteudo = request.nextUrl.searchParams.get("conteudo")
+
+  // GET ?id=X&conteudo=1 -> devolve o conteudo extraido de UM documento
+  if (id && querConteudo) {
+    const { data, error } = await supabaseServer
+      .from("agente_documentos")
+      .select("id, nome_arquivo, status, conteudo_extraido")
+      .eq("id", id)
+      .single()
+
+    if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+    return NextResponse.json({ documento: data })
+  }
+
+  // GET ?agente_id=N -> lista os documentos de um agente
   const agenteId = request.nextUrl.searchParams.get("agente_id")
   if (!agenteId) return NextResponse.json({ erro: "agente_id e obrigatorio" }, { status: 400 })
 

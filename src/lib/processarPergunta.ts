@@ -18,6 +18,9 @@ export type MensagemHistorico = { role: "user" | "assistant"; content: string }
 // Quantas mensagens a Nirmata "lembra" (janela deslizante). Mude aqui se quiser mais/menos.
 const JANELA_MEMORIA = 10
 
+// Limite de caracteres de documentos injetados por agente (proteção de tamanho/custo)
+const LIMITE_DOCS_POR_AGENTE = 8000
+
 /*
  * GANCHO PARA O FUTURO (evolução da memória):
  * Hoje a memória é uma JANELA DESLIZANTE (últimas JANELA_MEMORIA mensagens).
@@ -37,14 +40,21 @@ ${linhas}
 `
 }
 
-function montarPromptAgente(a: AgenteDB, pergunta: string, contexto: string): string {
+function montarPromptAgente(a: AgenteDB, pergunta: string, contexto: string, docs: string): string {
   const base =
     a.prompt && a.prompt.trim().length > 0
       ? a.prompt
       : `Você é ${a.nome}, um especialista em ${a.perspectiva}. ${a.descricao}`
 
-  return `${base}
+  const blocoDocs = docs
+    ? `
+Documentos de conhecimento deste agente (use como fonte ao analisar, quando relevante):
+${docs}
+`
+    : ""
 
+  return `${base}
+${blocoDocs}
 ${contexto}Pergunta atual do usuário:
 "${pergunta}"
 
@@ -72,6 +82,27 @@ export async function processarPergunta(pergunta: string, historico: MensagemHis
     throw new Error("Não consegui carregar os agentes: " + (error?.message ?? "lista vazia"))
   }
 
+  // 1b) Lê os documentos extraídos de todos os agentes ativos (1 query só)
+  const ids = agentes.map((a) => a.id)
+  const { data: docsData } = await supabaseServer
+    .from("agente_documentos")
+    .select("agente_id, nome_arquivo, conteudo_extraido")
+    .in("agente_id", ids)
+    .eq("status", "extraido")
+
+  // Agrupa por agente, respeitando o limite de caracteres por agente
+  const docsPorAgente = new Map<number, string>()
+  if (docsData) {
+    for (const d of docsData) {
+      if (!d.conteudo_extraido) continue
+      const atual = docsPorAgente.get(d.agente_id) ?? ""
+      if (atual.length >= LIMITE_DOCS_POR_AGENTE) continue
+      const restante = LIMITE_DOCS_POR_AGENTE - atual.length
+      const trecho = `\n[Documento: ${d.nome_arquivo}]\n${d.conteudo_extraido.slice(0, restante)}`
+      docsPorAgente.set(d.agente_id, atual + trecho)
+    }
+  }
+
   // 2) Chama os agentes em 2 batches (dinâmico)
   const meio = Math.ceil(agentes.length / 2)
   const batches = [agentes.slice(0, meio), agentes.slice(meio)]
@@ -81,7 +112,8 @@ export async function processarPergunta(pergunta: string, historico: MensagemHis
     await Promise.all(
       batch.map(async (a) => {
         try {
-          const resposta = await chamarGemini(montarPromptAgente(a as AgenteDB, pergunta, contexto))
+          const docs = docsPorAgente.get(a.id) ?? ""
+          const resposta = await chamarGemini(montarPromptAgente(a as AgenteDB, pergunta, contexto, docs))
           respostasAgentes.set(a.id, parseRespostaAgente(resposta))
         } catch (e) {
           console.error("❌ Erro agente " + a.id + ":", e)

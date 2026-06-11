@@ -52,6 +52,14 @@ function formatarTamanho(bytes: number | null): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function labelStatus(s: string | null): string {
+  if (s === 'extraido') return 'texto extraído ✓'
+  if (s === 'pendente') return 'processando...'
+  if (s === 'nao_suportado') return 'tipo não suportado'
+  if (s === 'vazio') return 'sem texto'
+  return s ?? ''
+}
+
 export default function MentePage() {
   const [, setAgentesRespostas] = useState<AgentResponse[]>([])
   const [agentes, setAgentes] = useState<Agente[]>(FALLBACK)
@@ -62,6 +70,8 @@ export default function MentePage() {
 
   const [documentos, setDocumentos] = useState<Documento[]>([])
   const [enviandoDoc, setEnviandoDoc] = useState(false)
+  const [docVisualizando, setDocVisualizando] = useState<{ nome: string; texto: string } | null>(null)
+  const [carregandoConteudo, setCarregandoConteudo] = useState(false)
 
   const carregarAgentes = () => {
     fetch('/api/agentes')
@@ -114,6 +124,7 @@ export default function MentePage() {
     setAgenteSel(null)
     setModoNovo(false)
     setDocumentos([])
+    setDocVisualizando(null)
   }
 
   const salvar = async () => {
@@ -173,6 +184,16 @@ export default function MentePage() {
         alert('Erro ao enviar: ' + d.erro)
       } else {
         carregarDocumentos(agenteSel.id)
+        if (d.documento?.id) {
+          const re = await fetch('/api/extrair-documento', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documento_id: d.documento.id }),
+          })
+          const rd = await re.json()
+          if (rd.erro) console.warn('Extração:', rd.erro)
+          carregarDocumentos(agenteSel.id)
+        }
       }
     } catch {
       alert('Erro ao enviar o documento.')
@@ -182,12 +203,32 @@ export default function MentePage() {
   }
 
   const removerDocumento = async (id: string) => {
-    if (!confirm('Remover este documento?')) return
+    if (!confirm('Remover este documento? O agente vai "esquecer" esse conteúdo.')) return
     try {
       await fetch('/api/agente-documentos?id=' + id, { method: 'DELETE' })
       if (agenteSel) carregarDocumentos(agenteSel.id)
     } catch {
       alert('Erro ao remover o documento.')
+    }
+  }
+
+  const verConteudo = async (doc: Documento) => {
+    if (doc.status !== 'extraido') {
+      alert('Este documento ainda não tem texto extraído.')
+      return
+    }
+    setCarregandoConteudo(true)
+    try {
+      const r = await fetch('/api/agente-documentos?id=' + doc.id + '&conteudo=1')
+      const d = await r.json()
+      setDocVisualizando({
+        nome: doc.nome_arquivo,
+        texto: d.documento?.conteudo_extraido ?? '(vazio)',
+      })
+    } catch {
+      alert('Erro ao carregar o conteúdo.')
+    } finally {
+      setCarregandoConteudo(false)
     }
   }
 
@@ -367,7 +408,7 @@ export default function MentePage() {
             {/* Documentos do agente */}
             <div className="mb-6">
               <label className="block text-xs text-slate-400 mb-2">
-                Documentos <span className="text-slate-600">(PDF, Word, imagens)</span>
+                Documentos <span className="text-slate-600">(PDF, Word, Excel, CSV)</span>
               </label>
 
               {modoNovo || !agenteSel || agenteSel.id <= 0 ? (
@@ -378,12 +419,12 @@ export default function MentePage() {
                     className="flex items-center justify-center gap-2 w-full py-2 mb-3 rounded-lg text-sm cursor-pointer"
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.2)', color: '#cbd5e1' }}
                   >
-                    {enviandoDoc ? 'Enviando...' : '+ Anexar documento'}
+                    {enviandoDoc ? 'Enviando e lendo...' : '+ Anexar documento'}
                     <input
                       type="file"
                       hidden
                       disabled={enviandoDoc}
-                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt"
                       onChange={(e) => {
                         const f = e.target.files?.[0]
                         if (f) enviarDocumento(f)
@@ -402,18 +443,23 @@ export default function MentePage() {
                           className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs"
                           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
                         >
-                          <div className="min-w-0">
-                            <p className="truncate text-slate-200">{doc.nome_arquivo}</p>
+                          <button
+                            type="button"
+                            onClick={() => verConteudo(doc)}
+                            className="min-w-0 text-left flex-1"
+                            style={{ cursor: doc.status === 'extraido' ? 'pointer' : 'default', background: 'none', border: 'none', padding: 0 }}
+                            title={doc.status === 'extraido' ? 'Clique pra ver o que o agente sabe deste documento' : ''}
+                          >
+                            <p className="truncate text-slate-200 hover:text-blue-300">{doc.nome_arquivo}</p>
                             <p className="text-slate-500">
-                              {formatarTamanho(doc.tamanho_bytes)}
-                              {doc.status === 'pendente' ? ' · texto ainda não extraído' : ' · ' + doc.status}
+                              {formatarTamanho(doc.tamanho_bytes)} · {labelStatus(doc.status)}
                             </p>
-                          </div>
+                          </button>
                           <button
                             type="button"
                             onClick={() => removerDocumento(doc.id)}
                             className="text-slate-500 hover:text-red-400 flex-shrink-0"
-                            style={{ cursor: 'pointer', fontSize: 16 }}
+                            style={{ cursor: 'pointer', fontSize: 16, background: 'none', border: 'none' }}
                           >
                             ✕
                           </button>
@@ -446,6 +492,41 @@ export default function MentePage() {
                   Remover
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: conteúdo extraído (o que o agente "sabe" deste documento) */}
+      {docVisualizando && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-8">
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setDocVisualizando(null)} />
+          <div
+            className="relative w-full max-w-2xl max-h-[80vh] rounded-2xl p-6 flex flex-col"
+            style={{
+              background: 'rgba(12,12,18,0.97)',
+              border: '1px solid rgba(255,255,255,0.12)',
+            }}
+          >
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold truncate">📄 {docVisualizando.nome}</h3>
+                <p className="text-xs text-slate-500">O que o agente sabe deste documento (texto extraído)</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDocVisualizando(null)}
+                className="text-slate-400 hover:text-slate-200 flex-shrink-0 ml-4"
+                style={{ cursor: 'pointer', fontSize: 20, background: 'none', border: 'none' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div
+              className="flex-1 min-h-0 overflow-auto rounded-lg p-4 text-xs text-slate-300 whitespace-pre-wrap"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', lineHeight: 1.6 }}
+            >
+              {carregandoConteudo ? 'Carregando...' : docVisualizando.texto}
             </div>
           </div>
         </div>
