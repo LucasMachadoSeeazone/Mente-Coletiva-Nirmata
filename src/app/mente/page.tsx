@@ -24,6 +24,7 @@ type Agente = {
   ativo?: boolean
   ordem?: number
   prompt?: string
+  docs_chars?: number
 }
 
 type Documento = {
@@ -193,6 +194,7 @@ export default function MentePage() {
           const rd = await re.json()
           if (rd.erro) console.warn('Extração:', rd.erro)
           carregarDocumentos(agenteSel.id)
+          carregarAgentes() // bolha cresce com o novo conhecimento
         }
       }
     } catch {
@@ -207,6 +209,7 @@ export default function MentePage() {
     try {
       await fetch('/api/agente-documentos?id=' + id, { method: 'DELETE' })
       if (agenteSel) carregarDocumentos(agenteSel.id)
+      carregarAgentes() // bolha encolhe (agente "esqueceu")
     } catch {
       alert('Erro ao remover o documento.')
     }

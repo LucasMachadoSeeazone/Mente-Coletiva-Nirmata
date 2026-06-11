@@ -8,6 +8,7 @@ export type AgenteViz = {
   descricao: string
   perspectiva: string
   prompt?: string
+  docs_chars?: number
 }
 
 type Neuron = {
@@ -39,11 +40,18 @@ const CORES: Record<string, string[]> = {
 }
 const COR_PADRAO = '203,213,225'
 
-// Nº de neurônios pelo TAMANHO DO PROMPT (mín 5, máx 28).
-// Sem prompt, cai pro nome+descrição só pra não ficar vazio.
+// Conhecimento total do agente = prompt + documentos extraídos.
+// Mais conhecimento -> mais neurônios (mín 5, máx 28).
+function conhecimentoDoAgente(a: AgenteViz): number {
+  const prompt = a.prompt && a.prompt.length > 0 ? a.prompt.length : (a.nome + a.descricao).length
+  const docs = a.docs_chars ?? 0
+  return prompt + docs
+}
+
 function neuroniosDoAgente(a: AgenteViz): number {
-  const base = a.prompt && a.prompt.length > 0 ? a.prompt.length : (a.nome + a.descricao).length
-  const n = Math.round(4 + base / 45)
+  const base = conhecimentoDoAgente(a)
+  // /45 pro prompt dar o grosso; docs (milhares de chars) empurram pro teto suavemente
+  const n = Math.round(4 + Math.min(base, 400) / 45 + Math.max(0, base - 400) / 1200)
   return Math.max(5, Math.min(28, n))
 }
 
@@ -59,9 +67,9 @@ export function CerebroNeural({
   const cbRef = useRef(onAgenteClick)
   cbRef.current = onAgenteClick
 
-  // Inclui o tamanho do prompt na chave: muda o prompt -> rebuild
+  // Inclui o conhecimento (prompt+docs) na chave: mudou -> rebuild
   const chave = agentes
-    .map((a) => `${a.id}:${a.perspectiva}:${(a.prompt ?? a.nome + a.descricao).length}`)
+    .map((a) => `${a.id}:${a.perspectiva}:${conhecimentoDoAgente(a)}`)
     .join('|')
 
   useEffect(() => {
@@ -366,3 +374,4 @@ export function CerebroNeural({
     </div>
   )
 }
+
