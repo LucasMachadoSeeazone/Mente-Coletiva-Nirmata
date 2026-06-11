@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -25,13 +25,25 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [conversaId, setConversaId] = useState<string | null>(null)
+
+  // Carrega a conversa salva ao abrir
+  useEffect(() => {
+    fetch('/api/historico')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.conversa_id) setConversaId(d.conversa_id)
+        if (d.mensagens) setMessages(d.mensagens)
+      })
+      .catch(() => {})
+  }, [])
 
   const handleSendMessage = async () => {
     if (!input.trim()) return
 
-    const userMessage: Message = { role: 'user', content: input }
-    // histórico = conversa até agora (antes de adicionar a pergunta nova)
-    const historico = messages
+    const perguntaAtual = input
+    const userMessage: Message = { role: 'user', content: perguntaAtual }
+    const historico = messages // conversa até agora (janela deslizante usa isso)
     setMessages((prev) => [...prev, userMessage])
     setInput('')
     setLoading(true)
@@ -40,7 +52,7 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
       const response = await fetch('/api/conversa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pergunta: input, historico }),
+        body: JSON.stringify({ pergunta: perguntaAtual, historico, conversa_id: conversaId }),
       })
 
       const data = await response.json()
@@ -49,11 +61,7 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
         onNovaResposta(data.agentes)
       }
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.resposta_final || 'Erro ao processar',
-      }
-      setMessages((prev) => [...prev, assistantMessage])
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.resposta_final || 'Erro ao processar' }])
     } catch (error) {
       console.error('Erro:', error)
       setMessages((prev) => [...prev, { role: 'assistant', content: 'Erro ao conectar com a API' }])
@@ -62,8 +70,37 @@ export function ChatBox({ onNovaResposta }: ChatBoxProps) {
     }
   }
 
+  const novaConversa = async () => {
+    if (messages.length > 0 && !confirm('Começar uma nova conversa? A atual continua salva no histórico.')) return
+    try {
+      const r = await fetch('/api/historico', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'nova' }),
+      })
+      const d = await r.json()
+      if (d.conversa_id) {
+        setConversaId(d.conversa_id)
+        setMessages([])
+      }
+    } catch {
+      alert('Erro ao criar nova conversa.')
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
+      <div className="flex justify-end mb-2 flex-shrink-0">
+        <button
+          type="button"
+          onClick={novaConversa}
+          className="text-xs text-slate-400 hover:text-slate-200"
+          style={{ cursor: 'pointer', background: 'none', border: 'none' }}
+        >
+          + Nova conversa
+        </button>
+      </div>
+
       <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center text-slate-500 text-sm px-2">
