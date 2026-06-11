@@ -15,27 +15,53 @@ type AgenteDB = {
 
 export type MensagemHistorico = { role: "user" | "assistant"; content: string }
 
-// Quantas mensagens a Nirmata "lembra" (janela deslizante). Mude aqui se quiser mais/menos.
+// Memória: últimas N mensagens vão na íntegra (janela deslizante).
 const JANELA_MEMORIA = 10
-
-// Limite de caracteres de documentos injetados por agente (proteção de tamanho/custo)
+// O que vier antes da janela é resumido. Limite de chars que entram no resumo (proteção de custo).
+const LIMITE_RESUMO_INPUT = 6000
+// Limite de caracteres de documentos injetados por agente.
 const LIMITE_DOCS_POR_AGENTE = 8000
 
 /*
- * GANCHO PARA O FUTURO (evolução da memória):
- * Hoje a memória é uma JANELA DESLIZANTE (últimas JANELA_MEMORIA mensagens).
- * Próximos níveis, quando o histórico crescer:
- *   (2) RESUMO: resumir as mensagens que saem da janela num parágrafo e injetar como "resumo da conversa até aqui".
- *   (3) MEMÓRIA SELETIVA: extrair fatos/decisões importantes e guardar numa tabela, injetando só o relevante.
- * A função abaixo (montarContextoHistorico) é o ponto onde essa lógica entraria.
+ * EVOLUÇÃO DA MEMÓRIA:
+ *  - Nível 1 (janela deslizante): últimas JANELA_MEMORIA mensagens na íntegra. ✅
+ *  - Nível 2 (resumo): o que sai da janela é resumido pelo Gemini e injetado como memória. ✅ (abaixo)
+ *  - Nível 3 (memória seletiva): extrair fatos/decisões importantes e guardar numa tabela. (futuro)
+ *
+ * OBS de performance (futuro): hoje o resumo é gerado a cada pergunta a partir das mensagens
+ * antigas recebidas. Dá pra otimizar guardando um "resumo acumulado" na tabela nirmata_conversas
+ * e atualizando incrementalmente, evitando re-resumir sempre.
  */
-function montarContextoHistorico(historico: MensagemHistorico[]): string {
+async function montarContextoHistorico(historico: MensagemHistorico[]): Promise<string> {
   if (!historico || historico.length === 0) return ""
+
   const recentes = historico.slice(-JANELA_MEMORIA)
+  const antigas = historico.slice(0, -JANELA_MEMORIA)
+
+  let blocoResumo = ""
+  if (antigas.length > 0) {
+    const textoAntigas = antigas
+      .map((m) => (m.role === "user" ? "Usuário: " : "Nirmata: ") + m.content)
+      .join("\n")
+      .slice(-LIMITE_RESUMO_INPUT)
+
+    try {
+      const resumo = await chamarGemini(
+        `Resuma de forma curta e objetiva (3 a 5 linhas) os pontos principais, decisões e o contexto desta parte de uma conversa, para servir de memória de longo prazo. Não invente nada, apenas condense o que está escrito.\n\nConversa:\n${textoAntigas}`
+      )
+      if (resumo && resumo.trim()) {
+        blocoResumo = `Resumo da conversa anterior (memória de longo prazo):\n${resumo.trim()}\n\n`
+      }
+    } catch (e) {
+      console.error("❌ Erro ao resumir histórico:", e)
+    }
+  }
+
   const linhas = recentes
     .map((m) => (m.role === "user" ? "Usuário: " : "Nirmata: ") + m.content)
     .join("\n")
-  return `Histórico recente da conversa (use para manter contexto e coerência):
+
+  return `${blocoResumo}Histórico recente da conversa (use para manter contexto e coerência):
 ${linhas}
 `
 }
@@ -69,7 +95,7 @@ CONFIANÇA: um número de 0 a 100`
 export async function processarPergunta(pergunta: string, historico: MensagemHistorico[] = []) {
   const inicio = Date.now()
 
-  const contexto = montarContextoHistorico(historico)
+  const contexto = await montarContextoHistorico(historico)
 
   // 1) Lê os agentes ativos do banco (com o prompt personalizado)
   const { data: agentes, error } = await supabaseServer
@@ -90,7 +116,6 @@ export async function processarPergunta(pergunta: string, historico: MensagemHis
     .in("agente_id", ids)
     .eq("status", "extraido")
 
-  // Agrupa por agente, respeitando o limite de caracteres por agente
   const docsPorAgente = new Map<number, string>()
   if (docsData) {
     for (const d of docsData) {
@@ -125,7 +150,7 @@ export async function processarPergunta(pergunta: string, historico: MensagemHis
   // 3) Consolida (consenso + lista de agentes pra UI)
   const consolidada = consolidarRespostas(respostasAgentes, agentes as never)
 
-  // 4) Síntese final — a "voz" da Nirmata, integrando as perspectivas + histórico
+  // 4) Síntese final — a "voz" da Nirmata
   const resumoAgentes = agentes
     .map((a) => {
       const r = respostasAgentes.get(a.id)
