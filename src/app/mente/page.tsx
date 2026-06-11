@@ -35,7 +35,17 @@ type Documento = {
   status: string | null
 }
 
-const PERSPECTIVAS = ['Análise', 'Estratégia', 'Risco', 'Pessoas']
+const PERSPECTIVAS = [
+  'Análise',
+  'Estratégia',
+  'Risco',
+  'Pessoas',
+  'Execução & Operação',
+  'Cliente & Mercado',
+  'Financeiro',
+  'Inovação & Criatividade',
+  'Cultura & Valores',
+]
 
 const FALLBACK: Agente[] = AGENTES_CONFIG.filter((a) => a.ativo).map((a) => ({ ...a }))
 
@@ -357,10 +367,7 @@ export default function MentePage() {
             }}
           >
             <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{modoNovo ? '✨' : agenteSel.emoji ?? '🧠'}</span>
-                <h2 className="text-lg font-semibold">{modoNovo ? 'Novo agente' : 'Editar agente'}</h2>
-              </div>
+              <h2 className="text-lg font-semibold">{modoNovo ? 'Novo agente' : 'Editar agente'}</h2>
               <button type="button" onClick={fechar} className="text-slate-400 hover:text-slate-200" style={{ cursor: 'pointer', fontSize: 20 }}>
                 ✕
               </button>
